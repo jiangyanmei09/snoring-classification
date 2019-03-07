@@ -1,0 +1,111 @@
+# -*- coding: utf-8 -*-
+"""
+Created on Thu Nov  1 19:51:28 2018
+
+@author: Administrator
+"""
+# 把4256张图片分别放在 0, 1, 文件夹中，
+# 随机选择70% = 2987 作为训练集， 
+#         20% = 843 作为验证集，
+#         10% = 426 作为测试集
+
+
+from __future__ import division, print_function, absolute_import
+
+
+import tflearn
+import numpy as np
+import os
+import matplotlib.pyplot as plt
+from tflearn.layers.core import input_data, dropout, fully_connected
+from tflearn.layers.conv import conv_2d, max_pool_2d
+from tflearn.layers.normalization import local_response_normalization
+from tflearn.layers.normalization import batch_normalization
+from tflearn.layers.estimator import regression
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import precision_score, recall_score, accuracy_score
+from sklearn.metrics import confusion_matrix
+from sklearn.metrics import classification_report
+from sklearn.metrics import roc_curve, auc
+from sklearn.metrics import roc_auc_score
+
+
+
+
+# input data
+import tflearn.datasets.snoring as snoring
+X, Y = snoring.load_data(one_hot=True, resize_pics=(227, 227))
+
+Xtrain_temp, Xtest, Ytrain_temp, Ytest = train_test_split(X, Y, 
+                                         test_size=0.1, random_state=0) # 20%的testing data
+Xtrain, Xval, Ytrain, Yval = train_test_split(Xtrain_temp, Ytrain_temp, 
+                                              test_size=0.22,random_state=2) # 20%的validation data
+
+# outputing datasets
+# one-hot 编码后， 第一列求和的值为类别是 0 的数量，第二列求和的值为类别是 1 的数量
+print("The number of total data, class-0, class-1:", len(Y), Y.sum(axis=0))
+print("The number of training data class-0, class-1:", len(Ytrain), Ytrain.sum(axis=0))
+print("The number of validation data class-0, class-1:", len(Yval), Yval.sum(axis=0))
+print("The number of testing data class-0, class-1:", len(Ytest), Ytest.sum(axis=0))
+
+
+# Building 'AlexNet'
+network = input_data(shape=[None, 227, 227, 3])
+network = conv_2d(network, 96, 11, strides=4, activation='sigmoid') #卷积层参数的设置
+network = max_pool_2d(network, 3, strides=2)
+network = local_response_normalization(network)
+network = conv_2d(network, 256, 5, activation='Relu')
+network = max_pool_2d(network, 3, strides=2)
+network = local_response_normalization(network)
+network = conv_2d(network, 384, 3, activation='Relu')
+network = conv_2d(network, 384, 3, activation='Relu')
+network = conv_2d(network, 256, 3, activation='Relu')
+network = max_pool_2d(network, 3, strides=2)
+network = local_response_normalization(network)
+network = fully_connected(network, 4096, activation='tanh')
+network = dropout(network, 0.5)
+network = fully_connected(network, 4096, activation='tanh')
+network = dropout(network, 0.5)
+network = batch_normalization(network, trainable=True)
+network = fully_connected(network, 2, activation='softmax')
+network = regression(network, optimizer='sgd',
+                     loss='binary_crossentropy',
+                     learning_rate=0.001)
+
+
+# Training
+model = tflearn.DNN(network, checkpoint_path='/home/a/jiangyanmei/model/Exp_1B_model_alexnet',
+                   # best_checkpoint_path='E:/spyder work/Alexnet/best_model_alexnet',
+                    max_checkpoints=1, tensorboard_verbose=0)
+model.fit(Xtrain, Ytrain, n_epoch=5000, validation_set=(Xval, Yval), shuffle=True,
+          show_metric=True, batch_size=64, snapshot_step=200,
+          snapshot_epoch=False, run_id='Exp_1B_Alexnet ')
+
+
+
+
+#predicting
+Ytest_pred = model.predict(Xtest)
+print("Test accuracy  : ", accuracy_score(Ytest.argmax(axis=1), Ytest_pred.argmax(axis=1)))
+print("Recall         : ", recall_score(Ytest.argmax(axis=1), Ytest_pred.argmax(axis=1)))
+print("precision_score: ", precision_score(Ytest.argmax(axis=1), Ytest_pred.argmax(axis=1)))
+print("AUC value      : ", roc_auc_score(Ytest.argmax(axis=1), Ytest_pred.argmax(axis=1)))
+print(classification_report(y_true=Ytest.argmax(axis=1), y_pred=Ytest_pred.argmax(axis=1)))
+print("confusion_matrix: ", confusion_matrix(Ytest.argmax(axis=1), Ytest_pred.argmax(axis=1)))
+
+
+
+# ROC curve
+fpr, tpr, thresholds = roc_curve(Ytest.argmax(axis=1), Ytest_pred.argmax(axis=1))
+roc_auc = auc(fpr, tpr)
+plt.plot(fpr, tpr, lw=1, label='ROC(area=%0.2f)' % (roc_auc))
+plt.xlim = ([0.0, 1.0])
+plt.ylim = ([0.0, 1.0])
+plt.xlabel("FPR(False Positive Rate)")
+plt.ylabel("TPR(True Positive Rate)")
+plt.title("Receiver Operating Characteristic, ROC(AUC=%0.2f)" % (roc_auc))
+plt.savefig('/home/a/jiangyanmei/picture/Exp_1B_ROC.jpg')
+plt.show
+
+
+
